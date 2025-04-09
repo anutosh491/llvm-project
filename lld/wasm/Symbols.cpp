@@ -104,6 +104,35 @@ UndefinedGlobal *WasmSym::memoryBase;
 DefinedData *WasmSym::definedMemoryBase;
 TableSymbol *WasmSym::indirectFunctionTable;
 
+void WasmSym::reset() {
+  callCtors = nullptr;
+  callDtors = nullptr;
+  initMemory = nullptr;
+  applyGlobalRelocs = nullptr;
+  applyTLSRelocs = nullptr;
+  applyGlobalTLSRelocs = nullptr;
+  initTLS = nullptr;
+  firstPageEnd = nullptr;
+  startFunction = nullptr;
+  dsoHandle = nullptr;
+  dataEnd = nullptr;
+  globalBase = nullptr;
+  heapBase = nullptr;
+  heapEnd = nullptr;
+  initMemoryFlag = nullptr;
+  stackPointer = nullptr;
+  stackLow = nullptr;
+  stackHigh = nullptr;
+  tlsBase = nullptr;
+  tlsSize = nullptr;
+  tlsAlign = nullptr;
+  tableBase = nullptr;
+  definedTableBase = nullptr;
+  memoryBase = nullptr;
+  definedMemoryBase = nullptr;
+  indirectFunctionTable = nullptr;
+}
+
 WasmSymbolType Symbol::getWasmType() const {
   if (isa<FunctionSymbol>(this))
     return WASM_SYMBOL_TYPE_FUNCTION;
