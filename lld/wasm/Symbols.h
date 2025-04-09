@@ -539,6 +539,7 @@ public:
 
 // linker-generated symbols
 struct WasmSym {
+  static void reset();
   // __global_base
   // Symbol marking the start of the global section.
   static DefinedData *globalBase;

@@ -131,7 +131,10 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   auto *context = new CommonLinkerContext;
 
   context->e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
-  context->e.cleanupCallback = []() { ctx.reset(); };
+  context->e.cleanupCallback = []() {
+    ctx.reset();
+    WasmSym::reset();  // manually clear globals
+  };
   context->e.logName = args::getFilenameWithoutExe(args[0]);
   context->e.errorLimitExceededMsg =
       "too many errors emitted, stopping now (use "
