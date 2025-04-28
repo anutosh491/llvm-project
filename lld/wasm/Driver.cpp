@@ -999,10 +999,6 @@ static void createOptionalSymbols() {
     ctx.sym.definedTableBase = symtab->addOptionalDataSymbol("__table_base");
   }
 
-  ctx.sym.firstPageEnd = symtab->addOptionalDataSymbol("__wasm_first_page_end");
-  if (ctx.sym.firstPageEnd)
-    ctx.sym.firstPageEnd->setVA(ctx.arg.pageSize);
-
   // For non-shared memory programs we still need to define __tls_base since we
   // allow object files built with TLS to be linked into single threaded
   // programs, and such object files can contain references to this symbol.

@@ -932,7 +932,7 @@ static void finalizeIndirectFunctionTable() {
   }
 
   uint32_t tableSize = ctx.arg.tableBase + out.elemSec->numEntries();
-  WasmLimits limits = {0, tableSize, 0, 0};
+  WasmLimits limits = {0, tableSize, 0};
   if (ctx.sym.indirectFunctionTable->isDefined() && !ctx.arg.growableTable) {
     limits.Flags |= WASM_LIMITS_FLAG_HAS_MAX;
     limits.Maximum = limits.Minimum;

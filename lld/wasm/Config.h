@@ -184,10 +184,6 @@ struct Ctx {
     DefinedData *heapBase;
     DefinedData *heapEnd;
 
-    // __wasm_first_page_end
-    // A symbol whose address is the end of the first page in memory (if any).
-    DefinedData *firstPageEnd;
-
     // __wasm_init_memory_flag
     // Symbol whose contents are nonzero iff memory has already been
     // initialized.
