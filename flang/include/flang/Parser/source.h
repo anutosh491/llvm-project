@@ -62,6 +62,7 @@ public:
   Encoding encoding() const { return encoding_; }
 
   bool Open(std::string path, llvm::raw_ostream &error);
+  bool Open(const llvm::MemoryBuffer &buffer);
   bool ReadStandardInput(llvm::raw_ostream &error);
   void Close();
   SourcePosition GetSourcePosition(std::size_t) const;

@@ -37,6 +37,7 @@ public:
   const CookedSource &cooked() const { return DEREF(currentCooked_); }
 
   const SourceFile *Prescan(const std::string &path, Options);
+  const SourceFile *Prescan(const llvm::MemoryBuffer &buffer, Options);
   void EmitPreprocessedSource(
       llvm::raw_ostream &, bool lineDirectives = true) const;
   void EmitPreprocessorMacros(llvm::raw_ostream &) const;
@@ -57,6 +58,9 @@ public:
   }
 
 private:
+  const SourceFile *Prescan(
+      const std::string &path, const llvm::MemoryBuffer *buffer, Options);
+
   Options options_;
   AllCookedSources &allCooked_;
   CookedSource *currentCooked_{nullptr};

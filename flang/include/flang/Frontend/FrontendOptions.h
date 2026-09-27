@@ -197,7 +197,7 @@ class FrontendInputFile {
   bool isCUDAFortran{false};
 
 public:
-  FrontendInputFile() = default;
+  FrontendInputFile() : mustBePreprocessed(false) {}
   FrontendInputFile(llvm::StringRef file, InputKind inKind)
       : file(file.str()), kind(inKind) {
 
@@ -211,7 +211,14 @@ public:
   }
 
   FrontendInputFile(const llvm::MemoryBuffer *memBuf, InputKind inKind)
-      : buffer(memBuf), kind(inKind) {}
+      : buffer(memBuf), kind(inKind), mustBePreprocessed(false) {
+    llvm::StringRef identifier{memBuf->getBufferIdentifier()};
+    auto pathDotIndex{identifier.rfind(".")};
+    llvm::StringRef pathSuffix{identifier.substr(pathDotIndex + 1)};
+    isFixedForm = isFixedFormSuffix(pathSuffix);
+    mustBePreprocessed = isToBePreprocessed(pathSuffix);
+    isCUDAFortran = isCUDAFortranSuffix(pathSuffix);
+  }
 
   InputKind getKind() const { return kind; }
 

@@ -197,6 +197,29 @@ TEST_F(FrontendActionTest, EmitLLVM) {
                   .contains("define void @_QQmain()"));
 }
 
+TEST(FrontendActionTest, EmitLLVMFromMemoryBuffer) {
+  auto input = llvm::MemoryBuffer::getMemBuffer(
+      "subroutine cell() bind(c)\nend subroutine\n", "repl-cell.f90");
+
+  CompilerInstance compInst;
+  compInst.getInvocation().getTargetOpts().triple =
+      llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple());
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  compInst.createDiagnostics();
+  compInst.getFrontendOpts().inputs.emplace_back(
+      input.get(), Language::Fortran);
+  compInst.getFrontendOpts().programAction = EmitLLVM;
+
+  llvm::SmallVector<char, 256> outputBuffer;
+  compInst.setOutputStream(
+      std::make_unique<llvm::raw_svector_ostream>(outputBuffer));
+
+  EXPECT_TRUE(executeCompilerInvocation(&compInst));
+  EXPECT_TRUE(llvm::StringRef(outputBuffer.data(), outputBuffer.size())
+          .contains("define void @cell()"));
+}
+
 TEST_F(FrontendActionTest, EmitAsm) {
   // Populate the input file with the pre-defined input and flush it.
   *(inputFileOs) << "end program";

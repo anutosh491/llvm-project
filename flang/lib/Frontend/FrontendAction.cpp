@@ -46,7 +46,7 @@ bool FrontendAction::beginSourceFile(CompilerInstance &ci,
 
   // Return immediately if the input file does not exist or is not a file. Note
   // that we cannot check this for input from stdin.
-  if (input.getFile() != "-") {
+  if (input.isFile() && input.getFile() != "-") {
     if (!llvm::sys::fs::is_regular_file(input.getFile())) {
       // Create an diagnostic ID to report
       unsigned diagID;
@@ -163,7 +163,10 @@ bool FrontendAction::runPrescan() {
   }
 
   // Prescan. In case of failure, report and return.
-  ci.getParsing().Prescan(currentInputPath, parserOptions);
+  if (getCurrentInput().isFile())
+    ci.getParsing().Prescan(currentInputPath, parserOptions);
+  else
+    ci.getParsing().Prescan(*getCurrentInput().getBuffer(), parserOptions);
 
   return !reportFatalScanningErrors();
 }

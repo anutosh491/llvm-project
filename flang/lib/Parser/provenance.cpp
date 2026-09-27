@@ -198,6 +198,12 @@ const SourceFile *AllSources::Open(std::string path, llvm::raw_ostream &error,
   }
 }
 
+const SourceFile *AllSources::Open(const llvm::MemoryBuffer &buffer) {
+  std::unique_ptr<SourceFile> source{std::make_unique<SourceFile>(encoding_)};
+  source->Open(buffer);
+  return ownedSourceFiles_.emplace_back(std::move(source)).get();
+}
+
 const SourceFile *AllSources::ReadStandardInput(llvm::raw_ostream &error) {
   std::unique_ptr<SourceFile> source{std::make_unique<SourceFile>(encoding_)};
   if (source->ReadStandardInput(error)) {

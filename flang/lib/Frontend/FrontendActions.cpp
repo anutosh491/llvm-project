@@ -371,8 +371,8 @@ bool CodeGenAction::beginSourceFileAction() {
 
   // Print initial full MLIR module, before lowering or transformations, if
   // -save-temps has been specified.
-  if (!saveMLIRTempFile(ci.getInvocation(), *mlirModule, getCurrentFile(),
-                        "fir")) {
+  if (!saveMLIRTempFile(ci.getInvocation(), *mlirModule,
+                        getCurrentFileOrBufferName(), "fir")) {
     unsigned diagID = ci.getDiagnostics().getCustomDiagID(
         clang::DiagnosticsEngine::Error, "Saving MLIR temp file failed");
     ci.getDiagnostics().Report(diagID);
@@ -799,7 +799,7 @@ void CodeGenAction::generateLLVMIR() {
   config.ComplexRange = opts.getComplexRange();
 
   // Create the pass pipeline
-  fir::createMLIRToLLVMPassPipeline(pm, config, getCurrentFile());
+  fir::createMLIRToLLVMPassPipeline(pm, config, getCurrentFileOrBufferName());
   (void)mlir::applyPassManagerCLOptions(pm);
 
   // run the pass manager
@@ -815,8 +815,8 @@ void CodeGenAction::generateLLVMIR() {
 
   // Print final MLIR module, just before translation into LLVM IR, if
   // -save-temps has been specified.
-  if (!saveMLIRTempFile(ci.getInvocation(), *mlirModule, getCurrentFile(),
-                        "llvmir")) {
+  if (!saveMLIRTempFile(ci.getInvocation(), *mlirModule,
+                        getCurrentFileOrBufferName(), "llvmir")) {
     unsigned diagID = ci.getDiagnostics().getCustomDiagID(
         clang::DiagnosticsEngine::Error, "Saving MLIR temp file failed");
     ci.getDiagnostics().Report(diagID);

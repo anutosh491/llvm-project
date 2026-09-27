@@ -21,6 +21,17 @@ Parsing::Parsing(AllCookedSources &allCooked) : allCooked_{allCooked} {}
 Parsing::~Parsing() {}
 
 const SourceFile *Parsing::Prescan(const std::string &path, Options options) {
+  return Prescan(path, nullptr, std::move(options));
+}
+
+const SourceFile *Parsing::Prescan(
+    const llvm::MemoryBuffer &buffer, Options options) {
+  return Prescan(
+      buffer.getBufferIdentifier().str(), &buffer, std::move(options));
+}
+
+const SourceFile *Parsing::Prescan(const std::string &path,
+    const llvm::MemoryBuffer *buffer, Options options) {
   options_ = options;
   AllSources &allSources{allCooked_.allSources()};
   allSources.ClearSearchPath();
@@ -33,7 +44,9 @@ const SourceFile *Parsing::Prescan(const std::string &path, Options options) {
   std::string buf;
   llvm::raw_string_ostream fileError{buf};
   const SourceFile *sourceFile{nullptr};
-  if (path == "-") {
+  if (buffer) {
+    sourceFile = allSources.Open(*buffer);
+  } else if (path == "-") {
     sourceFile = allSources.ReadStandardInput(fileError);
   } else if (options.isModuleFile) {
     // Don't mess with intrinsic module search path

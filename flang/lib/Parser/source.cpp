@@ -151,6 +151,16 @@ bool SourceFile::Open(std::string path, llvm::raw_ostream &error) {
   return true;
 }
 
+bool SourceFile::Open(const llvm::MemoryBuffer &buffer) {
+  Close();
+  path_ = buffer.getBufferIdentifier().str();
+  buf_ =
+      llvm::WritableMemoryBuffer::getNewUninitMemBuffer(buffer.getBufferSize());
+  llvm::copy(buffer.getBuffer(), buf_->getBufferStart());
+  ReadFile();
+  return true;
+}
+
 bool SourceFile::ReadStandardInput(llvm::raw_ostream &error) {
   Close();
   path_ = "<stdin>";

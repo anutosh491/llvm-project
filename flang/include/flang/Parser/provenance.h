@@ -154,6 +154,7 @@ public:
   const SourceFile *OpenPath(std::string path, llvm::raw_ostream &error);
   const SourceFile *Open(std::string path, llvm::raw_ostream &error,
       std::optional<std::string> &&prependPath = std::nullopt);
+  const SourceFile *Open(const llvm::MemoryBuffer &buffer);
   const SourceFile *ReadStandardInput(llvm::raw_ostream &error);
 
   // Returns the paths of every source file opened so far: the main file and any
