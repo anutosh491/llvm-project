@@ -15,7 +15,9 @@
 #include "llvm/Support/Error.h"
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <system_error>
+#include <vector>
 
 namespace Fortran::frontend {
 class CompilerInstance;
@@ -39,6 +41,7 @@ private:
   std::error_code initializationError;
   bool ownsModuleDirectory{false};
   std::string latestStateModule;
+  std::vector<std::vector<std::string>> visibleNamesHistory{1};
 };
 
 } // namespace Fortran::interpreter

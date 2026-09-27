@@ -43,6 +43,7 @@ struct PreparedCell {
   std::string source;
   std::string stateModule;
   std::string entryPoint;
+  llvm::SmallVector<std::string> declaredNames;
 };
 
 bool startsWithKeyword(llvm::StringRef line, llvm::StringRef keyword) {
@@ -220,19 +221,33 @@ void emitStateUse(llvm::raw_ostream &output, llvm::StringRef module,
   output << '\n';
 }
 
+llvm::SmallVector<std::string> getShadowedNames(
+    llvm::ArrayRef<std::string> declaredNames,
+    llvm::ArrayRef<std::string> visibleNames) {
+  llvm::SmallVector<std::string> shadowedNames;
+  for (const std::string &name : declaredNames)
+    if (llvm::is_contained(visibleNames, name))
+      shadowedNames.push_back(name);
+  return shadowedNames;
+}
+
 PreparedCell prepareCellSource(llvm::StringRef code, std::uint64_t cellId,
-    llvm::StringRef previousStateModule) {
+    llvm::StringRef previousStateModule,
+    llvm::ArrayRef<std::string> visibleNames) {
   std::string mainProgramBody;
   if (unwrapMainProgram(code, mainProgramBody))
-    return prepareCellSource(mainProgramBody, cellId, previousStateModule);
+    return prepareCellSource(
+        mainProgramBody, cellId, previousStateModule, visibleNames);
 
   if (isStandaloneProcedure(code)) {
     llvm::SmallVector<llvm::StringRef> lines;
     code.split(lines, '\n');
     std::string procedureName = getProcedureName(lines);
-    llvm::SmallVector<std::string> shadowedNames;
+    llvm::SmallVector<std::string> declaredNames;
     if (!procedureName.empty())
-      shadowedNames.push_back(procedureName);
+      declaredNames.push_back(procedureName);
+    llvm::SmallVector<std::string> shadowedNames =
+        getShadowedNames(declaredNames, visibleNames);
 
     std::string moduleName =
         llvm::formatv("flang_repl_state_{0}", cellId).str();
@@ -275,10 +290,11 @@ PreparedCell prepareCellSource(llvm::StringRef code, std::uint64_t cellId,
       output << "  end subroutine\n";
     }
     output << "end module " << moduleName << '\n';
-    return {std::move(generated), std::move(moduleName), std::move(entryPoint)};
+    return {std::move(generated), std::move(moduleName), std::move(entryPoint),
+        std::move(declaredNames)};
   }
   if (isCompleteProgramUnit(code))
-    return {code.str(), {}, {}};
+    return {code.str(), {}, {}, {}};
 
   llvm::SmallVector<llvm::StringRef> lines;
   code.split(lines, '\n');
@@ -299,9 +315,11 @@ PreparedCell prepareCellSource(llvm::StringRef code, std::uint64_t cellId,
   std::string generated;
   llvm::raw_string_ostream output{generated};
   if (hasSpecification) {
-    llvm::SmallVector<std::string> shadowedNames;
+    llvm::SmallVector<std::string> declaredNames;
     for (std::size_t index = 0; index < firstExecutable; ++index)
-      appendDeclaredNames(lines[index], shadowedNames);
+      appendDeclaredNames(lines[index], declaredNames);
+    llvm::SmallVector<std::string> shadowedNames =
+        getShadowedNames(declaredNames, visibleNames);
 
     std::string moduleName =
         llvm::formatv("flang_repl_state_{0}", cellId).str();
@@ -319,7 +337,8 @@ PreparedCell prepareCellSource(llvm::StringRef code, std::uint64_t cellId,
     }
     output << "end module " << moduleName << '\n';
     return {std::move(generated), std::move(moduleName),
-        firstExecutable == lines.size() ? "" : procedureName};
+        firstExecutable == lines.size() ? "" : procedureName,
+        std::move(declaredNames)};
   }
 
   output << "subroutine " << procedureName << "() bind(c, name=\""
@@ -335,7 +354,7 @@ PreparedCell prepareCellSource(llvm::StringRef code, std::uint64_t cellId,
       output << "  " << line << '\n';
   }
   output << "end subroutine\n";
-  return {std::move(generated), {}, std::move(procedureName)};
+  return {std::move(generated), {}, std::move(procedureName), {}};
 }
 
 } // namespace
@@ -369,7 +388,8 @@ llvm::Expected<CellArtifact> IncrementalCompiler::compile(
     return llvm::errorCodeToError(initializationError);
   std::string inputName =
       llvm::formatv("flang-repl-cell-{0}.f90", cellId).str();
-  PreparedCell prepared = prepareCellSource(code, cellId, latestStateModule);
+  PreparedCell prepared = prepareCellSource(
+      code, cellId, latestStateModule, visibleNamesHistory.back());
   std::unique_ptr<llvm::MemoryBuffer> input =
       llvm::MemoryBuffer::getMemBufferCopy(prepared.source, inputName);
 
@@ -406,13 +426,21 @@ llvm::Expected<CellArtifact> IncrementalCompiler::compile(
   if (!prepared.stateModule.empty()) {
     artifact.setStateTransition(latestStateModule, prepared.stateModule);
     latestStateModule = prepared.stateModule;
+    std::vector<std::string> visibleNames = visibleNamesHistory.back();
+    for (const std::string &name : prepared.declaredNames)
+      if (!llvm::is_contained(visibleNames, name))
+        visibleNames.push_back(name);
+    visibleNamesHistory.push_back(std::move(visibleNames));
   }
   return std::move(artifact);
 }
 
 void IncrementalCompiler::undo(const CellArtifact &cell) {
-  if (!cell.getStateModule().empty())
+  if (!cell.getStateModule().empty()) {
     latestStateModule = cell.getPreviousStateModule().str();
+    assert(visibleNamesHistory.size() > 1);
+    visibleNamesHistory.pop_back();
+  }
 }
 
 } // namespace Fortran::interpreter
