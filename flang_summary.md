@@ -969,6 +969,79 @@ semantic API:
 
 This is the large frontend project.
 
+## Native `flang-repl` prototype status
+
+The experimental implementation is preserved on branch
+`flang-repl-experimental` in the durable worktree
+`/Users/anutosh491/work/llvm-project-flang-repl`. It currently contains three
+checkpoint commits for buffer-backed frontend input, the interpreter/tool
+skeleton, and this design summary. No Wasm ABI or target-predefine work is
+mixed into its REPL changes; its base is the already committed A1 target-index
+change used by the existing build.
+
+The native prototype now has a working vertical slice:
+
+- `flang-repl` preloads the native `flang-rt` and its target intrinsic modules;
+- every input compiles from a memory buffer to an independently owned,
+  post-Flang-pipeline LLVM-dialect MLIR module;
+- `MLIRIncrementalExecutor` creates an execution engine for each successful
+  cell and registers earlier definitions for cross-cell resolution;
+- executable cells have the explicit entry `flang_repl_cell_N`;
+- definition-only cells deliberately have no entry and are loaded without
+  being invoked;
+- generated state modules and their `.mod` files preserve simple variables
+  and procedures across cells;
+- `%undo` removes the newest loaded cell and restores the preceding state
+  module;
+- `%load` preloads an additional native dynamic library.
+
+An explicit `PROGRAM ... END PROGRAM` cell is now normalized into a cell body
+and then wrapped in `flang_repl_cell_N`. `_QQmain` is no longer the interpreter
+entry contract. This was tested with the unchanged Hello World notebook cell,
+which compiled and ran as `flang_repl_cell_1`.
+
+The entry symbol is also returned directly by the cell transformation rather
+than guessed by scanning the resulting MLIR. Consequently a user-defined,
+zero-argument `BIND(C)` subroutine can be compiled as a definition-only cell
+without being executed accidentally.
+
+Simple additive redefinition now works without weakening Flang semantics. If
+a new cell redeclares `i`, the generated state module imports the old binding
+under a unique internal alias before declaring the new `i`:
+
+```fortran
+module flang_repl_state_3
+  use flang_repl_state_1, flang_repl_old_3_0 => i
+  integer :: i
+end module
+```
+
+Old compiled code remains bound to the symbol in `flang_repl_state_1`; future
+cells import `flang_repl_state_3` and resolve `i` to the new symbol. The same
+scheme has been tested for redefining a module procedure. A session where the
+first `fn` added its arguments and the second `fn` multiplied them printed `5`
+and then `6`.
+
+Current validation covers:
+
+- a complete Hello World program normalized to a numbered cell entry;
+- loose expressions (`1+3`, `(2+3)*3`);
+- declarations followed by assignment and lookup (`i = 5`);
+- declaration plus loop execution;
+- procedures defined in one cell and called by later cells;
+- a procedure definition and trailing expression in the same cell;
+- definition-only `BIND(C)` procedures not being invoked;
+- newest-cell undo; and
+- simple variable and procedure redefinition.
+
+The current cell classifier is intentionally still a prototype. Declaration
+shadowing recognizes simple entity declarations using `::`, and explicit main
+program normalization does not yet support an internal `CONTAINS` part. These
+rules must move into a separately tested `CellSourceTransformer`, followed by
+real Flang fragment-parser entry points, before the loose-cell syntax is an
+upstream-quality frontend feature. The successful execution and state model do
+not depend on adding a new node to ordinary batch Flang's parse tree.
+
 ## MLIR/Wasm executor observations
 
 The MLIR Python binding patches already prove the browser execution pipeline:
