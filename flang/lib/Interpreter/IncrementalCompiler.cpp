@@ -85,6 +85,40 @@ bool isStandaloneProcedure(llvm::StringRef source) {
   return false;
 }
 
+bool unwrapMainProgram(llvm::StringRef source, std::string &body) {
+  llvm::SmallVector<llvm::StringRef> lines;
+  source.split(lines, '\n');
+
+  std::size_t first = 0;
+  while (first < lines.size() &&
+      (lines[first].trim().empty() || lines[first].trim().starts_with("!")))
+    ++first;
+  if (first == lines.size())
+    return false;
+
+  std::string firstLoweredStorage = lines[first].trim().lower();
+  if (!startsWithKeyword(firstLoweredStorage, "program"))
+    return false;
+
+  std::size_t last = lines.size();
+  while (last > first + 1 &&
+      (lines[last - 1].trim().empty() ||
+          lines[last - 1].trim().starts_with("!")))
+    --last;
+  if (last == first + 1)
+    return false;
+
+  std::string lastLoweredStorage = lines[last - 1].trim().lower();
+  llvm::StringRef lastLowered{lastLoweredStorage};
+  if (lastLowered != "end" && !lastLowered.starts_with("end program"))
+    return false;
+
+  llvm::raw_string_ostream output{body};
+  for (std::size_t index = first + 1; index + 1 < last; ++index)
+    output << lines[index] << '\n';
+  return true;
+}
+
 bool isSpecificationLine(llvm::StringRef line) {
   std::string loweredStorage = line.trim().lower();
   llvm::StringRef lowered{loweredStorage};
@@ -121,19 +155,92 @@ bool isExpressionCell(llvm::ArrayRef<llvm::StringRef> lines) {
   });
 }
 
+void appendDeclaredNames(
+    llvm::StringRef line, llvm::SmallVectorImpl<std::string> &names) {
+  line = line.take_front(line.find('!'));
+  std::size_t separator = line.find("::");
+  if (separator == llvm::StringRef::npos)
+    return;
+
+  llvm::StringRef entities = line.drop_front(separator + 2);
+  std::size_t begin = 0;
+  unsigned parentheses = 0;
+  for (std::size_t index = 0; index <= entities.size(); ++index) {
+    char character = index == entities.size() ? ',' : entities[index];
+    if (character == '(') {
+      ++parentheses;
+    } else if (character == ')' && parentheses) {
+      --parentheses;
+    } else if (character == ',' && !parentheses) {
+      llvm::StringRef entity = entities.slice(begin, index).trim();
+      std::size_t nameLength = 0;
+      while (nameLength < entity.size() &&
+          (llvm::isAlnum(entity[nameLength]) || entity[nameLength] == '_'))
+        ++nameLength;
+      if (nameLength)
+        names.push_back(entity.take_front(nameLength).lower());
+      begin = index + 1;
+    }
+  }
+}
+
+std::string getProcedureName(llvm::ArrayRef<llvm::StringRef> lines) {
+  for (llvm::StringRef line : lines) {
+    std::string loweredStorage = line.trim().lower();
+    llvm::StringRef lowered{loweredStorage};
+    if (lowered.empty() || lowered.starts_with("!"))
+      continue;
+
+    for (llvm::StringRef keyword :
+        {llvm::StringRef{"subroutine"}, llvm::StringRef{"function"}}) {
+      std::size_t position = lowered.find(keyword);
+      if (position == llvm::StringRef::npos ||
+          (position && llvm::isAlnum(lowered[position - 1])))
+        continue;
+      llvm::StringRef after = lowered.drop_front(position + keyword.size());
+      after = after.ltrim();
+      std::size_t nameLength = 0;
+      while (nameLength < after.size() &&
+          (llvm::isAlnum(after[nameLength]) || after[nameLength] == '_'))
+        ++nameLength;
+      return after.take_front(nameLength).str();
+    }
+    break;
+  }
+  return {};
+}
+
+void emitStateUse(llvm::raw_ostream &output, llvm::StringRef module,
+    llvm::ArrayRef<std::string> shadowedNames, std::uint64_t cellId) {
+  if (module.empty())
+    return;
+  output << "  use " << module;
+  for (auto [index, name] : llvm::enumerate(shadowedNames))
+    output << ", flang_repl_old_" << cellId << '_' << index << " => " << name;
+  output << '\n';
+}
+
 PreparedCell prepareCellSource(llvm::StringRef code, std::uint64_t cellId,
     llvm::StringRef previousStateModule) {
+  std::string mainProgramBody;
+  if (unwrapMainProgram(code, mainProgramBody))
+    return prepareCellSource(mainProgramBody, cellId, previousStateModule);
+
   if (isStandaloneProcedure(code)) {
+    llvm::SmallVector<llvm::StringRef> lines;
+    code.split(lines, '\n');
+    std::string procedureName = getProcedureName(lines);
+    llvm::SmallVector<std::string> shadowedNames;
+    if (!procedureName.empty())
+      shadowedNames.push_back(procedureName);
+
     std::string moduleName =
         llvm::formatv("flang_repl_state_{0}", cellId).str();
     std::string generated;
     llvm::raw_string_ostream output{generated};
     output << "module " << moduleName << '\n';
-    if (!previousStateModule.empty())
-      output << "  use " << previousStateModule << '\n';
+    emitStateUse(output, previousStateModule, shadowedNames, cellId);
     output << "contains\n";
-    llvm::SmallVector<llvm::StringRef> lines;
-    code.split(lines, '\n');
     std::size_t procedureEnd = lines.size();
     for (std::size_t index = 0; index < lines.size(); ++index) {
       std::string loweredStorage = lines[index].trim().lower();
@@ -170,18 +277,8 @@ PreparedCell prepareCellSource(llvm::StringRef code, std::uint64_t cellId,
     output << "end module " << moduleName << '\n';
     return {std::move(generated), std::move(moduleName), std::move(entryPoint)};
   }
-  if (isCompleteProgramUnit(code)) {
-    llvm::SmallVector<llvm::StringRef> lines;
-    code.split(lines, '\n');
-    for (llvm::StringRef line : lines) {
-      std::string loweredStorage = line.trim().lower();
-      llvm::StringRef lowered{loweredStorage};
-      if (lowered.empty() || lowered.starts_with("!"))
-        continue;
-      return {code.str(), {},
-          startsWithKeyword(lowered, "program") ? "_QQmain" : ""};
-    }
-  }
+  if (isCompleteProgramUnit(code))
+    return {code.str(), {}, {}};
 
   llvm::SmallVector<llvm::StringRef> lines;
   code.split(lines, '\n');
@@ -202,11 +299,14 @@ PreparedCell prepareCellSource(llvm::StringRef code, std::uint64_t cellId,
   std::string generated;
   llvm::raw_string_ostream output{generated};
   if (hasSpecification) {
+    llvm::SmallVector<std::string> shadowedNames;
+    for (std::size_t index = 0; index < firstExecutable; ++index)
+      appendDeclaredNames(lines[index], shadowedNames);
+
     std::string moduleName =
         llvm::formatv("flang_repl_state_{0}", cellId).str();
     output << "module " << moduleName << '\n';
-    if (!previousStateModule.empty())
-      output << "  use " << previousStateModule << '\n';
+    emitStateUse(output, previousStateModule, shadowedNames, cellId);
     for (std::size_t index = 0; index < firstExecutable; ++index)
       output << "  " << lines[index] << '\n';
     if (firstExecutable != lines.size()) {
