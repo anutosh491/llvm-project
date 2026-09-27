@@ -1034,6 +1034,61 @@ Current validation covers:
 - newest-cell undo; and
 - simple variable and procedure redefinition.
 
+The first redefinition implementation exposed an important distinction between
+"declared by this cell" and "already visible before this cell". It initially
+renamed every newly declared entity in the preceding module's `USE` statement;
+therefore a first declaration such as `integer :: k` incorrectly tried to
+import `k` from a module that did not contain it. `IncrementalCompiler` now
+tracks the visible-name set alongside the state-module history and only emits
+a rename for a true shadowing declaration. The original multi-cell `k` loop,
+new variable declarations after earlier cells, variable redefinition, and undo
+were retested. Undo restores compiler/module visibility, but—as with Clang's
+code unloading—it cannot reverse side effects that an executed cell already
+performed on persistent storage.
+
+Loose Fortran is currently normalized before parsing, not by mutating a Flang
+AST. `prepareCellSource()` classifies the cell, emits complete standard
+Fortran source containing a state module and/or numbered `BIND(C)` subroutine,
+and places that source in an in-memory `MemoryBuffer`. The ordinary Flang
+parser, semantic analysis, and lowering pipeline only see the generated valid
+program unit. This is a useful prototype boundary, but the textual classifier
+does not cover the complete Fortran grammar. An upstream-quality version
+should reuse Flang parser productions to build or transform a structured parse
+tree before semantics while retaining the same generated-module semantics.
+
+## Native Jupyter kernel proof
+
+An out-of-tree `xeus-flang-repl` prototype now links directly to the exported
+`flangInterpreter` CMake target. It does not use CppInterOp. One xeus kernel
+process owns one persistent `Fortran::interpreter::Interpreter`, and every
+Jupyter `execute_request` passes the complete notebook cell directly to
+`compileAndExecute()`.
+
+The initial kernel implements:
+
+- native xeus/ZeroMQ startup and an installable `xflang` kernelspec;
+- one persistent Flang session across notebook cells;
+- Flang runtime and intrinsic-module discovery from the resource directory;
+- runtime loading during xeus `configure_impl()`, before the first request;
+- OS-level stdout/stderr capture and Jupyter stream publication; and
+- basic success/error execute replies.
+
+CppInterOp and xeus-swift both capture JIT output by redirecting the process
+file descriptors to temporary files for the duration of a cell. The Flang
+kernel uses the same non-pipe design, but must additionally call the public
+Flang runtime `_FortranAFlush(-1)` entry after execution and before restoring
+file descriptor 1. Flang's preconnected unit 6 owns buffering above C stdio;
+`fflush(nullptr)` alone produced successful execute replies with no notebook
+output. Explicitly flushing the Fortran runtime delivers the buffered record
+while the per-cell capture is still active.
+
+An executed demonstration notebook validates Hello World, state shared across
+cells, a multiline `DO WHILE`, array assignment/output, and variable
+redefinition. The observed outputs include `1, 2, 4`, a later value of `8`,
+the array `1, 4, 9, 16, 25`, and a redefined value of `100`. The terminal-only
+`%end` delimiter is therefore not part of the notebook interface: the Jupyter
+protocol already supplies the complete cell as one request.
+
 The current cell classifier is intentionally still a prototype. Declaration
 shadowing recognizes simple entity declarations using `::`, and explicit main
 program normalization does not yet support an internal `CONTAINS` part. These
