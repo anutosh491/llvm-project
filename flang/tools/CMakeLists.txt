@@ -8,6 +8,7 @@
 
 add_subdirectory(bbc)
 add_subdirectory(flang-driver)
+add_subdirectory(flang-repl)
 if (NOT FLANG_STANDALONE_BUILD)
   # Mock flang only needed in bootstrapping builds
   add_subdirectory(fakeflang)
